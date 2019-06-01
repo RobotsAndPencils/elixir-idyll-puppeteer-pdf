@@ -42,6 +42,151 @@ defmodule PuppeteerPdf.Generate do
   end
 
   @doc """
+  Generate PDF file with a URL given as input.
+
+  ## Options
+  - `header_template` - HTML template for the print header.
+  - `footer_template` - HTML template for the print footer.
+  - `display_header_footer` - Display header and footer.
+  - `format` - Page format. Possible values: Letter, Legal, Tabloid, Ledger, A0, A1, A2, A3, A4, A5, A6
+  - `margin_left` - Integer value (px)
+  - `margin_right` - Integer value (px)
+  - `margin_top` - Integer value (px)
+  - `margin_bottom` - Integer value (px)
+  - `scale` - Scale of the webpage rendering. (default: 1). Accept values between 0.1 and 2.
+  - `width` - Paper width, accepts values labeled with units.
+  - `height` - Paper height, accepts values labeled with units.
+  - `debug` - Output Puppeteer PDF options
+  - `landscape` - Paper orientation.
+  - `print_background` - Print background graphics.
+  - `timeout` - Integer value (ms), configures the timeout of the PDF creation (defaults to 5000)
+  """
+  @spec from_url(String.t(), String.t(), list()) :: {:ok, String.t()} | {:error, atom()}
+  def from_url(url, pdf_output_path, options \\ []) do
+    exec_path =
+      case Application.get_env(:puppeteer_pdf, :exec_path) do
+        nil -> "puppeteer-pdf"
+        value -> value
+      end
+
+    params =
+      Enum.reduce(options, [url, "--path", pdf_output_path], fn {key, value}, result ->
+        value =
+          case key do
+            :header_template ->
+              ["--headerTemplate=#{value}"]
+
+            :footer_template ->
+              ["--footerTemplate=#{value}"]
+
+            :display_header_footer ->
+              ["--displayHeaderFooter"]
+
+            :format ->
+              if(
+                Enum.member?(
+                  [
+                    "letter",
+                    "legal",
+                    "tabloid",
+                    "ledger",
+                    "a0",
+                    "a1",
+                    "a2",
+                    "a3",
+                    "a4",
+                    "a5",
+                    "a6"
+                  ],
+                  to_string(value) |> String.downcase()
+                )
+              ) do
+                ["--format", to_string(value)]
+              else
+                {:error, :invalid_format}
+              end
+
+            :margin_left ->
+              must_be_integer("--marginLeft", value)
+
+            :margin_right ->
+              must_be_integer("--marginRight", value)
+
+            :margin_top ->
+              must_be_integer("--marginTop", value)
+
+            :margin_bottom ->
+              must_be_integer("--marginBottom", value)
+
+            :scale ->
+              with {value, ""} <- Float.parse(to_string(value)),
+                   true <- value >= 0.1 && value <= 2.0 do
+                ["--scale", to_string(value)]
+              else
+                _ -> {:error, :invalid_scale}
+              end
+
+            :width ->
+              must_be_integer("--width", value)
+
+            :height ->
+              must_be_integer("--height", value)
+
+            :debug ->
+              ["--debug"]
+
+            :landscape ->
+              ["--landscape"]
+
+            :print_background ->
+              ["--printBackground"]
+
+            :timeout ->
+              # timeout is not an argument for puppeteer-pdf
+              :ignore
+          end
+
+        case result do
+          {:error, message} ->
+            {:error, message}
+
+          _ ->
+            case value do
+              {:error, message} ->
+                {:error, message}
+
+              :ignore ->
+                result
+
+              _ ->
+                result ++ value
+            end
+        end
+      end)
+
+    case params do
+      {:error, message} ->
+        {:error, message}
+
+      _ ->
+        # In some cases when invalid values are provided the command executing
+        # can hang process. This will assure that it can exit.
+        task =
+          Task.async(fn ->
+            case System.cmd(exec_path, params) do
+              {cmd_response, _} ->
+                {:ok, cmd_response}
+
+              error_message ->
+                {:error, error_message}
+            end
+          end)
+
+        Task.await(task, options[:timeout] || 5000)
+    end
+  end
+
+  @doc """
   Generate PDF file with an HTML file path given as input.
 
   ## Options
