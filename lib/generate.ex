@@ -106,6 +106,9 @@ defmodule PuppeteerPdf.Generate do
                 {:error, :invalid_format}
               end
 
+            :ignore_https_errors ->
+              ["--ignoreHTTPSErrors", "true"]
+
             :margin_left ->
               must_be_integer("--marginLeft", value)
 
